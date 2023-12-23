@@ -38,7 +38,7 @@ def get_pairs(word):
         prev_char = char
     return pairs
 
-class Encoder:
+class BPE_tokenizer:
     def __init__(self, encoder, bpe_merges, errors='replace'):
         self.encoder = encoder
         self.decoder = {v:k for k,v in self.encoder.items()}
@@ -110,7 +110,7 @@ def get_BPE_tokenizer():
     with open('./GPT2/vocab.bpe', 'r', encoding="utf-8") as f:
         bpe_data = f.read()
     bpe_merges = [tuple(merge_str.split()) for merge_str in bpe_data.split('\n')[1:-1]]
-    return Encoder(
+    return BPE_tokenizer(
         encoder=encoder,
         bpe_merges=bpe_merges,
     )
