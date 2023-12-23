@@ -11,7 +11,7 @@ import argparse
 import numpy as np
 from GPT2.model import (GPT2LMHeadModel)
 from GPT2.config import GPT2Config
-from GPT2.encoder import get_BPE_tokenizer
+from GPT2.BPE_tokenizer import get_BPE_tokenizer
 
 import torch.nn.functional as F
 from tqdm import trange
