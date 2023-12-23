@@ -130,6 +130,9 @@ class GPT2Model(nn.Module):
         self.n_embd = config.n_embd
         self.n_vocab = config.vocab_size
 
+        '''
+        Translates integer ID to vector representation
+        '''
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
         self.wpe = nn.Embedding(config.n_positions, config.n_embd)
         block = Block(config.n_ctx, config, scale=True)
@@ -142,22 +145,52 @@ class GPT2Model(nn.Module):
         self.decoder.weight = model_embeddings_weights  # Tied weights
 
     def forward(self, input_ids, position_ids=None, token_type_ids=None, past=None):
+        
+        '''
+        GPT-2 can generate text incrementally, so it keeps track of "past" states (hidden states from previous tokens) 
+        to maintain context without reprocessing the entire sequence each time. 
+        This improves efficiency in tasks like text generation.
+        '''
         if past is None:
             past_length = 0
             past = [None] * len(self.h)
         else:
             past_length = past[0][0].size(-2)
+
+        '''
+        Positional encodings provide information about the order of tokens, 
+        which is essential since the model's layers (being based on self-attention) 
+        do not inherently process tokens in order. 
+        (see page 67 of slite from http://cs231n.stanford.edu/slides/2022/lecture_11_ruohan.pdf)
+
+        Generating position_ids dynamically allows the model to handle 
+        variable-length sequences and continue generating text from where it left off.
+        '''
         if position_ids is None:
             position_ids = torch.arange(past_length, input_ids.size(-1) + past_length, dtype=torch.long,
                                         device=input_ids.device)
             position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
 
+        '''
+        Word integer IDs are given as input.
+        Reshaping these IDs prepares them for processing through 
+        the embedding layers and aligns them with the 
+        expected input format of these layers.
+        '''
         input_shape = input_ids.size()
         input_ids = input_ids.view(-1, input_ids.size(-1))
         position_ids = position_ids.view(-1, position_ids.size(-1))
-
+        
+        '''
+        Tokenization and positional encoding
+        '''
         inputs_embeds = self.wte(input_ids)
         position_embeds = self.wpe(position_ids)
+
+        '''
+        Token type embeddings (if used) allow the model to distinguish between different segments 
+        within the input (e.g., in tasks involving multiple sequences like question-answering). 
+        '''
         if token_type_ids is not None:
             token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1))
             token_type_embeds = self.wte(token_type_ids)
