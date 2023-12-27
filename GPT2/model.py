@@ -94,6 +94,11 @@ class Attention(nn.Module):
         Divide to multi-head Q, K, V
         Transpose dimension of 2:head and 1:time/token
         '''
+        '''
+        While here the embedding dimension is dividable by number of head,
+        it is not necessary. 
+        The projection following the attention below can change the concated multi-head output into embedding dimension
+        '''
         key = key.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         query = query.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         value = value.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
