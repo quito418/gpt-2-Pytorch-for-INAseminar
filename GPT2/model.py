@@ -108,6 +108,8 @@ class Attention(nn.Module):
         Masked attention prevents tokens from attending to tokens that come after it in the sequence. 
         Hence, the value does not change. No need to recompute attention for tokens that have already been processed.
         Nevertheless, we save only the key and value, instead of the computed attention scores.
+        See below link for the saved computation detail.
+        https://r4j4n.github.io/blogs/posts/kv/
         '''
         if layer_past is not None:
             past_key, past_value = layer_past[0], layer_past[1]  # transpose back cf below
