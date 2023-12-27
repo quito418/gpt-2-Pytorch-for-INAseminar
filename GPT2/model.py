@@ -56,7 +56,15 @@ class Attention(nn.Module):
         self.c_proj = Conv1D(n_state, nx)
 
     def _attn(self, q, k, v):
-        w = torch.matmul(q, k)
+        '''
+        What are Query, Key, and Value?
+        See https://stats.stackexchange.com/questions/421935/what-exactly-are-keys-queries-and-values-in-attention-mechanisms
+        
+        How Attention was made?
+        https://www.youtube.com/watch?v=XfpMkf4rD6E
+        See this for history of RNN+attention http://cs231n.stanford.edu/slides/2022/lecture_11_ruohan.pdf
+        '''
+        w = torch.matmul(q, k.transpose(-2,-1))
         if self.scale:
             w = w / math.sqrt(v.size(-1))
         nd, ns = w.size(-2), w.size(-1)
@@ -79,16 +87,30 @@ class Attention(nn.Module):
             return x.permute(0, 2, 1, 3)  # (batch, head, seq_length, head_features)
 
     def forward(self, x, layer_past=None):
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
         x = self.c_attn(x)
         query, key, value = x.split(self.split_size, dim=2)
-        query = self.split_heads(query)
-        key = self.split_heads(key, k=True)
-        value = self.split_heads(value)
+        '''
+        Divide to multi-head Q, K, V
+        Transpose dimension of 2:head and 1:time/token
+        '''
+        key = key.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        query = query.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        value = value.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+        '''
+        Key, Value Cache logic
+        Masked attention prevents tokens from attending to tokens that come after it in the sequence. 
+        Hence, the value does not change. No need to recompute attention for tokens that have already been processed.
+        Nevertheless, we save only the key and value, instead of the computed attention scores.
+        '''
         if layer_past is not None:
-            past_key, past_value = layer_past[0].transpose(-2, -1), layer_past[1]  # transpose back cf below
-            key = torch.cat((past_key, key), dim=-1)
+            past_key, past_value = layer_past[0], layer_past[1]  # transpose back cf below
+            key = torch.cat((past_key, key), dim=-2)
             value = torch.cat((past_value, value), dim=-2)
-        present = torch.stack((key.transpose(-2, -1), value))  # transpose to have same shapes for stacking
+        present = torch.stack((key, value))  # transpose to have same shapes for stacking
+
+
         a = self._attn(query, key, value)
         a = self.merge_heads(a)
         a = self.c_proj(a)
@@ -134,6 +156,10 @@ class GPT2Model(nn.Module):
         Translates integer ID to vector representation
         '''
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
+        '''
+        Learned positional embeddings
+        https://voidism.github.io/notes/2020/01/26/What-has-the-positional-embedding-learned/
+        '''
         self.wpe = nn.Embedding(config.n_positions, config.n_embd)
         block = Block(config.n_ctx, config, scale=True)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(config.n_layer)])
@@ -147,9 +173,9 @@ class GPT2Model(nn.Module):
     def forward(self, input_ids, position_ids=None, token_type_ids=None, past=None):
         
         '''
-        GPT-2 can generate text incrementally, so it keeps track of "past" states (hidden states from previous tokens) 
+        GPT-2 can generate text incrementally, so it keeps track of "past" states 
         to maintain context without reprocessing the entire sequence each time. 
-        This improves efficiency in tasks like text generation.
+        Saves Query and Key of attention for reuse.
         '''
         if past is None:
             past_length = 0
@@ -183,6 +209,12 @@ class GPT2Model(nn.Module):
         
         '''
         Tokenization and positional encoding
+        Why cosine, sin functions for positional encoding?
+        See https://towardsdatascience.com/master-positional-encoding-part-i-63c05d90a0c3
+        TLDR: making position encoded into feature space that has distances between two vectors to better represent the distance between two token
+        e.g., using binary encoding for positional encoding would result in two consecutive tokens having the very distant distance.
+        Two example of sequential number in binary having significantly diffferent distance:
+        011111111 -> 100000000  , 100000000 -> 100000001
         '''
         inputs_embeds = self.wte(input_ids)
         position_embeds = self.wpe(position_ids)
@@ -190,12 +222,18 @@ class GPT2Model(nn.Module):
         '''
         Token type embeddings (if used) allow the model to distinguish between different segments 
         within the input (e.g., in tasks involving multiple sequences like question-answering). 
+        https://huggingface.co/docs/transformers/glossary#token-type-ids
         '''
         if token_type_ids is not None:
             token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1))
             token_type_embeds = self.wte(token_type_ids)
         else:
             token_type_embeds = 0
+        '''
+        Why addition of position embedding, not concatenation?
+        see  https://www.reddit.com/r/MachineLearning/comments/cttefo/comment/exs7d08/?utm_source=reddit&utm_medium=web2x&context=3
+        TLDR: in a high-dimensional space simply adding PE vector to input can be regarded as having a separate PE dimension
+        '''
         hidden_states = inputs_embeds + position_embeds + token_type_embeds
         presents = []
         for block, layer_past in zip(self.h, past):
