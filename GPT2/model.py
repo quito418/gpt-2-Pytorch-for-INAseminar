@@ -106,7 +106,8 @@ class Attention(nn.Module):
         '''
         Key, Value Cache logic
         Masked attention prevents tokens from attending to tokens that come after it in the sequence. 
-        Hence, the value does not change. No need to recompute attention for tokens that have already been processed.
+        Hence, the attention scores for previous tokens does not change when incrementally adding new token. 
+        No need to recompute attention for tokens that have already been processed.
         Nevertheless, we save only the key and value, instead of the computed attention scores.
         See below link for the saved computation detail.
         https://r4j4n.github.io/blogs/posts/kv/
